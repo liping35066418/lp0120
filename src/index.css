@@ -4,6 +4,7 @@
 
 :root {
   --theme-primary: #6366f1;
+  --theme-primary-rgb: 99, 102, 241;
   --theme-secondary: #8b5cf6;
   --theme-bg: #ffffff;
   --theme-text: #1f2937;

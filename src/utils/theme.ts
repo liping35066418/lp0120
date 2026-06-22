@@ -8,23 +8,32 @@ export function getThemeById(id: string): ThemeConfig {
 export function applyTheme(themeId: string): void {
   const theme = getThemeById(themeId)
   const root = document.documentElement
+  const primaryRgb = hexToRgb(theme.primaryColor)
 
   root.style.setProperty('--theme-primary', theme.primaryColor)
   root.style.setProperty('--theme-secondary', theme.secondaryColor)
   root.style.setProperty('--theme-bg', theme.backgroundColor)
   root.style.setProperty('--theme-text', theme.textColor)
   root.style.setProperty('--theme-border', theme.borderColor)
+  if (primaryRgb) {
+    root.style.setProperty('--theme-primary-rgb', `${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}`)
+  }
 }
 
 export function generateCssVars(themeId: string): Record<string, string> {
   const theme = getThemeById(themeId)
-  return {
+  const primaryRgb = hexToRgb(theme.primaryColor)
+  const vars: Record<string, string> = {
     '--theme-primary': theme.primaryColor,
     '--theme-secondary': theme.secondaryColor,
     '--theme-bg': theme.backgroundColor,
     '--theme-text': theme.textColor,
     '--theme-border': theme.borderColor,
   }
+  if (primaryRgb) {
+    vars['--theme-primary-rgb'] = `${primaryRgb.r}, ${primaryRgb.g}, ${primaryRgb.b}`
+  }
+  return vars
 }
 
 export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {

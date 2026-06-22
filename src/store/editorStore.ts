@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { EditorState, ComponentNode, ValidationError, DeviceType } from '@/types'
 import { createComponent, addComponent, removeComponent, updateComponentProps, moveComponent, runAllValidations, canSave } from '@/utils/validationRules'
+import { applyTheme } from '@/utils/theme'
 
 const initialComponents: ComponentNode[] = [
   {
@@ -73,7 +74,10 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
     get().validate()
   },
 
-  setTheme: (theme) => set({ theme }),
+  setTheme: (theme) => {
+    set({ theme })
+    applyTheme(theme)
+  },
 
   addNewComponent: (type, parentId, index = -1) => {
     const { components, history, historyIndex } = get()

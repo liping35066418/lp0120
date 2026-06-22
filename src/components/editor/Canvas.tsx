@@ -53,15 +53,57 @@ const Canvas: React.FC<CanvasProps> = () => {
     [addNewComponent]
   )
 
-  const handleDragOver = useCallback((e: React.DragEvent, parentId: string | null) => {
+  const handleDragOver = useCallback((e: React.DragEvent, parentId: string | null, index?: number) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
     setDragOverParentId(parentId)
+    if (index !== undefined) {
+      setDragIndex(index)
+    }
   }, [])
 
   const handleDragLeave = useCallback(() => {
-    // setDragOverParentId(null)
+    setDragOverParentId(null)
+    setDragIndex(-1)
   }, [])
+
+  const handleComponentDragOver = useCallback((e: React.DragEvent, parentId: string | null, list: ComponentNode[], index: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'copy'
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const height = rect.height
+    const midPoint = height / 2
+
+    setDragOverParentId(parentId)
+    if (y < midPoint) {
+      setDragIndex(index)
+    } else {
+      setDragIndex(index + 1)
+    }
+  }, [])
+
+  const handleComponentDrop = useCallback((e: React.DragEvent, parentId: string | null, list: ComponentNode[], index: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const height = rect.height
+    const midPoint = height / 2
+
+    const insertIndex = y < midPoint ? index : index + 1
+
+    const type = e.dataTransfer.getData('componentType')
+    if (type) {
+      addNewComponent(type, parentId, insertIndex)
+    }
+
+    setDragOverParentId(null)
+    setDragIndex(-1)
+  }, [addNewComponent])
 
   const renderComponents = (list: ComponentNode[], parentId: string | null = null) => {
     return list.map((comp, index) => {
@@ -69,11 +111,12 @@ const Canvas: React.FC<CanvasProps> = () => {
       const isSelected = selectedId === comp.id
       const isHovered = hoveredId === comp.id
       const isDragOver = dragOverParentId === comp.id && config?.canHaveChildren
-      const showDropHint = dragOverParentId === parentId && dragIndex === index
+      const showDropHintBefore = dragOverParentId === parentId && dragIndex === index
+      const showDropHintAfter = dragOverParentId === parentId && dragIndex === index + 1
 
       return (
         <div key={comp.id} className="relative">
-          {showDropHint && (
+          {showDropHintBefore && (
             <div className="h-12 mb-2 border-2 border-dashed border-primary-400 bg-primary-50 rounded-lg flex items-center justify-center text-primary-500 text-sm">
               <Plus size={16} className="mr-1" />
               放置组件
@@ -81,14 +124,25 @@ const Canvas: React.FC<CanvasProps> = () => {
           )}
           <div
             onDragOver={(e) => {
+              handleComponentDragOver(e, parentId, list, index)
               if (config?.canHaveChildren) {
-                handleDragOver(e, comp.id)
+                e.stopPropagation()
               }
             }}
-            onDragLeave={handleDragLeave}
+            onDragLeave={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              const x = e.clientX
+              const y = e.clientY
+              if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+                handleDragLeave()
+              }
+            }}
             onDrop={(e) => {
-              if (config?.canHaveChildren) {
+              if (config?.canHaveChildren && e.ctrlKey) {
+                e.stopPropagation()
                 handleDrop(e, comp.id)
+              } else {
+                handleComponentDrop(e, parentId, list, index)
               }
             }}
             className={`relative ${isDragOver ? 'ring-2 ring-primary-400 ring-inset bg-primary-50/50' : ''}`}
@@ -131,6 +185,12 @@ const Canvas: React.FC<CanvasProps> = () => {
               </div>
             )}
           </div>
+          {showDropHintAfter && (
+            <div className="h-12 mt-2 border-2 border-dashed border-primary-400 bg-primary-50 rounded-lg flex items-center justify-center text-primary-500 text-sm">
+              <Plus size={16} className="mr-1" />
+              放置组件
+            </div>
+          )}
         </div>
       )
     })
@@ -155,9 +215,16 @@ const Canvas: React.FC<CanvasProps> = () => {
               <div
                 className="bg-white min-h-[600px] overflow-auto"
                 style={{ width: '100%' }}
-                onDragOver={(e) => handleDragOver(e, null)}
+                onDragOver={(e) => {
+                  handleDragOver(e, null)
+                  setDragIndex(components.length)
+                }}
                 onDragLeave={handleDragLeave}
-                onDrop={(e) => handleDrop(e, null)}
+                onDrop={(e) => {
+                  if (e.currentTarget === e.target || dragIndex === -1) {
+                    handleDrop(e, null, components.length)
+                  }
+                }}
               >
                 <div className="p-4 space-y-3">
                   {components.length === 0 ? (
@@ -183,9 +250,16 @@ const Canvas: React.FC<CanvasProps> = () => {
         {device === 'pc' && (
           <div
             className="bg-white min-h-[600px] shadow-canvas rounded-lg overflow-hidden"
-            onDragOver={(e) => handleDragOver(e, null)}
+            onDragOver={(e) => {
+              handleDragOver(e, null)
+              setDragIndex(components.length)
+            }}
             onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, null)}
+            onDrop={(e) => {
+              if (e.currentTarget === e.target || dragIndex === -1) {
+                handleDrop(e, null, components.length)
+              }
+            }}
           >
             <div className="h-8 bg-gray-50 border-b border-gray-200 flex items-center px-4">
               <div className="flex gap-1.5">
