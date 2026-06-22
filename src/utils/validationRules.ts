@@ -152,6 +152,74 @@ export function moveComponent(
   return newComponents
 }
 
+export function isDescendant(
+  components: ComponentNode[],
+  ancestorId: string,
+  descendantId: string
+): boolean {
+  function search(list: ComponentNode[], isInside: boolean = false): boolean {
+    for (const comp of list) {
+      if (comp.id === ancestorId) {
+        if (search(comp.children, true)) return true
+      } else if (isInside && comp.id === descendantId) {
+        return true
+      }
+      if (comp.children.length > 0) {
+        if (search(comp.children, isInside || comp.id === ancestorId)) return true
+      }
+    }
+    return false
+  }
+  return search(components)
+}
+
+export function cloneComponent(
+  component: ComponentNode
+): ComponentNode {
+  const idMap = new Map<string, string>()
+
+  function generateNewId(): string {
+    return 'comp_' + Math.random().toString(36).substr(2, 9)
+  }
+
+  function cloneNode(node: ComponentNode): ComponentNode {
+    const newId = generateNewId()
+    idMap.set(node.id, newId)
+    return {
+      id: newId,
+      type: node.type,
+      props: { ...node.props },
+      styles: { ...node.styles },
+      children: node.children.map(cloneNode),
+    }
+  }
+
+  return cloneNode(component)
+}
+
+export function findComponentAndParent(
+  components: ComponentNode[],
+  id: string
+): { component: ComponentNode; parent: ComponentNode | null; index: number; list: ComponentNode[] } | null {
+  function search(
+    list: ComponentNode[],
+    parent: ComponentNode | null
+  ): { component: ComponentNode; parent: ComponentNode | null; index: number; list: ComponentNode[] } | null {
+    for (let i = 0; i < list.length; i++) {
+      const comp = list[i]
+      if (comp.id === id) {
+        return { component: comp, parent, index: i, list }
+      }
+      if (comp.children.length > 0) {
+        const found = search(comp.children, comp)
+        if (found) return found
+      }
+    }
+    return null
+  }
+  return search(components, null)
+}
+
 export function validateNesting(
   components: ComponentNode[],
   device: DeviceType

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { EditorState, ComponentNode, ValidationError, DeviceType } from '@/types'
-import { createComponent, addComponent, removeComponent, updateComponentProps, moveComponent, runAllValidations, canSave } from '@/utils/validationRules'
+import { createComponent, addComponent, removeComponent, updateComponentProps, moveComponent, runAllValidations, canSave, cloneComponent, findComponentAndParent } from '@/utils/validationRules'
 import { applyTheme } from '@/utils/theme'
 
 const initialComponents: ComponentNode[] = [
@@ -45,6 +45,7 @@ interface EditorActions {
   deleteComponent: (id: string) => void
   updateProps: (id: string, props: Record<string, any>) => void
   moveComponentById: (sourceId: string, targetParentId: string | null, targetIndex: number) => void
+  duplicateComponent: (id: string) => void
   undo: () => void
   redo: () => void
   saveTemplate: () => { success: boolean; errors: ValidationError[] }
@@ -53,6 +54,12 @@ interface EditorActions {
   setTemplateName: (name: string) => void
   validate: () => void
 }
+
+const HISTORY_MERGE_WINDOW = 1000
+
+let lastUpdateId: string | null = null
+let lastUpdateKey: string | null = null
+let lastUpdateTime = 0
 
 export const useEditorStore = create<EditorState & EditorActions>((set, get) => ({
   components: initialComponents,
@@ -91,6 +98,9 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       history: newHistory,
       historyIndex: newHistory.length - 1,
     })
+    lastUpdateId = null
+    lastUpdateKey = null
+    lastUpdateTime = 0
     get().validate()
   },
 
@@ -105,19 +115,45 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       history: newHistory,
       historyIndex: newHistory.length - 1,
     })
+    lastUpdateId = null
+    lastUpdateKey = null
+    lastUpdateTime = 0
     get().validate()
   },
 
   updateProps: (id, props) => {
     const { components, history, historyIndex } = get()
+    const now = Date.now()
+    const propKey = Object.keys(props)[0]
+
+    const shouldMerge =
+      lastUpdateId === id &&
+      lastUpdateKey === propKey &&
+      now - lastUpdateTime < HISTORY_MERGE_WINDOW
+
     const newComponents = updateComponentProps(components, id, props)
-    const newHistory = history.slice(0, historyIndex + 1)
-    newHistory.push(newComponents)
-    set({
-      components: newComponents,
-      history: newHistory,
-      historyIndex: newHistory.length - 1,
-    })
+
+    if (shouldMerge) {
+      const newHistory = [...history]
+      newHistory[historyIndex] = newComponents
+      set({
+        components: newComponents,
+        history: newHistory,
+      })
+    } else {
+      const newHistory = history.slice(0, historyIndex + 1)
+      newHistory.push(newComponents)
+      set({
+        components: newComponents,
+        history: newHistory,
+        historyIndex: newHistory.length - 1,
+      })
+    }
+
+    lastUpdateId = id
+    lastUpdateKey = propKey
+    lastUpdateTime = now
+
     get().validate()
   },
 
@@ -131,6 +167,34 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       history: newHistory,
       historyIndex: newHistory.length - 1,
     })
+    lastUpdateId = null
+    lastUpdateKey = null
+    lastUpdateTime = 0
+    get().validate()
+  },
+
+  duplicateComponent: (id) => {
+    const { components, history, historyIndex, selectedId } = get()
+    const found = findComponentAndParent(components, id)
+    if (!found) return
+
+    const { component, parent, index } = found
+    const cloned = cloneComponent(component)
+
+    const parentId = parent ? parent.id : null
+    const newComponents = addComponent(components, cloned, parentId, index + 1)
+
+    const newHistory = history.slice(0, historyIndex + 1)
+    newHistory.push(newComponents)
+    set({
+      components: newComponents,
+      selectedId: cloned.id,
+      history: newHistory,
+      historyIndex: newHistory.length - 1,
+    })
+    lastUpdateId = null
+    lastUpdateKey = null
+    lastUpdateTime = 0
     get().validate()
   },
 
@@ -143,6 +207,9 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
         historyIndex: newIndex,
         selectedId: null,
       })
+      lastUpdateId = null
+      lastUpdateKey = null
+      lastUpdateTime = 0
       get().validate()
     }
   },
@@ -156,6 +223,9 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
         historyIndex: newIndex,
         selectedId: null,
       })
+      lastUpdateId = null
+      lastUpdateKey = null
+      lastUpdateTime = 0
       get().validate()
     }
   },
@@ -184,6 +254,9 @@ export const useEditorStore = create<EditorState & EditorActions>((set, get) => 
       historyIndex: 0,
       selectedId: null,
     })
+    lastUpdateId = null
+    lastUpdateKey = null
+    lastUpdateTime = 0
     get().validate()
   },
 

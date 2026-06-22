@@ -1,9 +1,10 @@
 import React, { useCallback, useRef, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Copy } from 'lucide-react'
 import { useEditorStore } from '@/store/editorStore'
 import ComponentRenderer from '@/components/ComponentRenderer'
 import type { ComponentNode } from '@/types'
 import { componentConfigs } from '@/utils/componentRegistry'
+import { isDescendant } from '@/utils/validationRules'
 
 interface CanvasProps {}
 
@@ -17,11 +18,15 @@ const Canvas: React.FC<CanvasProps> = () => {
     setHoveredId,
     addNewComponent,
     deleteComponent,
+    moveComponentById,
+    duplicateComponent,
     validationErrors,
   } = useEditorStore()
 
   const [dragOverParentId, setDragOverParentId] = useState<string | null>(null)
   const [dragIndex, setDragIndex] = useState<number>(-1)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [invalidDrop, setInvalidDrop] = useState<boolean>(false)
   const canvasRef = useRef<HTMLDivElement>(null)
 
   const deviceWidth = device === 'pc' ? '100%' : '375px'
@@ -43,19 +48,28 @@ const Canvas: React.FC<CanvasProps> = () => {
       e.stopPropagation()
 
       const type = e.dataTransfer.getData('componentType')
+      const existingId = e.dataTransfer.getData('componentId')
+
       if (type) {
         addNewComponent(type, parentId, index)
+      } else if (existingId) {
+        if (existingId !== parentId && !isDescendant(components, existingId, parentId || '')) {
+          moveComponentById(existingId, parentId, index)
+        }
       }
 
       setDragOverParentId(null)
       setDragIndex(-1)
+      setDraggingId(null)
+      setInvalidDrop(false)
     },
-    [addNewComponent]
+    [addNewComponent, moveComponentById, components]
   )
 
   const handleDragOver = useCallback((e: React.DragEvent, parentId: string | null, index?: number) => {
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
+    const existingId = e.dataTransfer.getData('componentId')
+    e.dataTransfer.dropEffect = existingId ? 'move' : 'copy'
     setDragOverParentId(parentId)
     if (index !== undefined) {
       setDragIndex(index)
@@ -65,12 +79,28 @@ const Canvas: React.FC<CanvasProps> = () => {
   const handleDragLeave = useCallback(() => {
     setDragOverParentId(null)
     setDragIndex(-1)
+    setInvalidDrop(false)
   }, [])
 
-  const handleComponentDragOver = useCallback((e: React.DragEvent, parentId: string | null, list: ComponentNode[], index: number) => {
+  const handleComponentDragStart = useCallback((e: React.DragEvent, compId: string) => {
+    e.dataTransfer.setData('componentId', compId)
+    e.dataTransfer.effectAllowed = 'move'
+    setDraggingId(compId)
+  }, [])
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingId(null)
+    setInvalidDrop(false)
+    setDragOverParentId(null)
+    setDragIndex(-1)
+  }, [])
+
+  const handleComponentDragOver = useCallback((e: React.DragEvent, parentId: string | null, list: ComponentNode[], index: number, compId: string) => {
     e.preventDefault()
     e.stopPropagation()
-    e.dataTransfer.dropEffect = 'copy'
+
+    const existingId = e.dataTransfer.getData('componentId')
+    e.dataTransfer.dropEffect = existingId ? 'move' : 'copy'
 
     const rect = e.currentTarget.getBoundingClientRect()
     const y = e.clientY - rect.top
@@ -83,9 +113,14 @@ const Canvas: React.FC<CanvasProps> = () => {
     } else {
       setDragIndex(index + 1)
     }
-  }, [])
 
-  const handleComponentDrop = useCallback((e: React.DragEvent, parentId: string | null, list: ComponentNode[], index: number) => {
+    if (existingId) {
+      const isInvalid = existingId === compId || isDescendant(components, existingId, compId)
+      setInvalidDrop(isInvalid)
+    }
+  }, [components])
+
+  const handleComponentDrop = useCallback((e: React.DragEvent, parentId: string | null, list: ComponentNode[], index: number, compId: string) => {
     e.preventDefault()
     e.stopPropagation()
 
@@ -97,34 +132,50 @@ const Canvas: React.FC<CanvasProps> = () => {
     const insertIndex = y < midPoint ? index : index + 1
 
     const type = e.dataTransfer.getData('componentType')
+    const existingId = e.dataTransfer.getData('componentId')
+
     if (type) {
       addNewComponent(type, parentId, insertIndex)
+    } else if (existingId) {
+      if (existingId !== compId && !isDescendant(components, existingId, compId)) {
+        moveComponentById(existingId, parentId, insertIndex)
+      }
     }
 
     setDragOverParentId(null)
     setDragIndex(-1)
-  }, [addNewComponent])
+    setDraggingId(null)
+    setInvalidDrop(false)
+  }, [addNewComponent, moveComponentById, components])
 
   const renderComponents = (list: ComponentNode[], parentId: string | null = null) => {
     return list.map((comp, index) => {
       const config = componentConfigs[comp.type]
       const isSelected = selectedId === comp.id
       const isHovered = hoveredId === comp.id
+      const isDragging = draggingId === comp.id
       const isDragOver = dragOverParentId === comp.id && config?.canHaveChildren
       const showDropHintBefore = dragOverParentId === parentId && dragIndex === index
       const showDropHintAfter = dragOverParentId === parentId && dragIndex === index + 1
 
+      const dropHintClass = invalidDrop
+        ? 'border-red-400 bg-red-50 text-red-500'
+        : 'border-primary-400 bg-primary-50 text-primary-500'
+
       return (
-        <div key={comp.id} className="relative">
+        <div key={comp.id} className={`relative ${isDragging ? 'opacity-50' : ''}`}>
           {showDropHintBefore && (
-            <div className="h-12 mb-2 border-2 border-dashed border-primary-400 bg-primary-50 rounded-lg flex items-center justify-center text-primary-500 text-sm">
+            <div className={`h-12 mb-2 border-2 border-dashed ${dropHintClass} rounded-lg flex items-center justify-center text-sm`}>
               <Plus size={16} className="mr-1" />
-              放置组件
+              {invalidDrop ? '无法放置' : '放置组件'}
             </div>
           )}
           <div
+            draggable={true}
+            onDragStart={(e) => handleComponentDragStart(e, comp.id)}
+            onDragEnd={handleDragEnd}
             onDragOver={(e) => {
-              handleComponentDragOver(e, parentId, list, index)
+              handleComponentDragOver(e, parentId, list, index, comp.id)
               if (config?.canHaveChildren) {
                 e.stopPropagation()
               }
@@ -142,13 +193,23 @@ const Canvas: React.FC<CanvasProps> = () => {
                 e.stopPropagation()
                 handleDrop(e, comp.id)
               } else {
-                handleComponentDrop(e, parentId, list, index)
+                handleComponentDrop(e, parentId, list, index, comp.id)
               }
             }}
-            className={`relative ${isDragOver ? 'ring-2 ring-primary-400 ring-inset bg-primary-50/50' : ''}`}
+            className={`relative cursor-move ${isDragOver ? 'ring-2 ring-primary-400 ring-inset bg-primary-50/50' : ''}`}
           >
             {isSelected && (
               <div className="absolute -right-2 top-2 z-20 flex gap-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    duplicateComponent(comp.id)
+                  }}
+                  className="p-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors shadow-lg"
+                  title="复制组件"
+                >
+                  <Copy size={14} />
+                </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -180,15 +241,15 @@ const Canvas: React.FC<CanvasProps> = () => {
             </ComponentRenderer>
 
             {config?.canHaveChildren && comp.children.length === 0 && isDragOver && (
-              <div className="py-4 text-center text-sm text-gray-400 border border-dashed border-gray-300 rounded mt-2">
-                拖拽组件到此处
+              <div className={`py-4 text-center text-sm border border-dashed rounded mt-2 ${invalidDrop ? 'border-red-300 text-red-400' : 'border-gray-300 text-gray-400'}`}>
+                {invalidDrop ? '无法放置在自身内部' : '拖拽组件到此处'}
               </div>
             )}
           </div>
           {showDropHintAfter && (
-            <div className="h-12 mt-2 border-2 border-dashed border-primary-400 bg-primary-50 rounded-lg flex items-center justify-center text-primary-500 text-sm">
+            <div className={`h-12 mt-2 border-2 border-dashed ${dropHintClass} rounded-lg flex items-center justify-center text-sm`}>
               <Plus size={16} className="mr-1" />
-              放置组件
+              {invalidDrop ? '无法放置' : '放置组件'}
             </div>
           )}
         </div>

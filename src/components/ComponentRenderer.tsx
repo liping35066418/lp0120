@@ -69,6 +69,7 @@ const ComponentRenderer: React.FC<ComponentRendererProps> = ({
 
   return (
     <div
+      data-component-id={component.id}
       className={`
         relative group/component
         ${isSelected ? 'ring-2 ring-primary-500 ring-offset-1' : ''}
